@@ -1,0 +1,960 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Low-Poly Racing v1.2</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;padding:10px;background:#101820;color:white;font-family:Arial;text-align:center}
+h2{margin:3px 0 8px;font-size:19px}
+#game{position:relative;width:100%;max-width:850px;height:min(66vh,510px);min-height:300px;margin:auto;overflow:hidden;border:2px solid #52636d;border-radius:12px;background:#91c9df}
+canvas{display:block;width:100%;height:100%}
+.panel{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;padding:12px;background:rgba(8,18,27,.9);z-index:5;overflow:auto}
+.panel h1{font-size:clamp(22px,5vw,36px);margin:0}
+.panel p{font-size:12px;margin:2px}
+button{border:0;border-radius:8px;padding:9px 14px;background:#e5a43b;color:#17202a;font-weight:bold;cursor:pointer;font-size:12px;transition:transform .14s ease,filter .14s ease,box-shadow .14s ease;box-shadow:0 3px 0 #9b6823,0 5px 10px #0004}
+button:hover{filter:brightness(1.08);transform:translateY(-1px)}
+button:active{transform:translateY(3px) scale(.94);filter:brightness(.92);box-shadow:0 0 0 #9b6823,0 1px 3px #0005}
+.small{padding:6px 9px;font-size:11px}
+#hud{position:absolute;z-index:2;top:7px;left:7px;display:none;text-align:left;padding:7px 9px;border-radius:7px;background:#0009;font-size:11px;line-height:1.5}
+#topButtons{position:absolute;z-index:3;top:7px;right:7px;display:none;gap:5px}
+.setting{width:min(270px,95%);text-align:left;font-size:12px}
+.setting input,.setting select{width:100%;margin-top:4px}
+.setting input[type=range]{accent-color:#e5a43b}
+.setting input[type=text],.setting select{padding:7px;border-radius:5px;border:1px solid #aaa}
+#settingsPanel{display:none}
+#musicCredit{opacity:.8;font-size:11px}
+</style>
+</head>
+<body>
+
+<h2>LOW-POLY RACING • v1.2</h2>
+
+<div id="game">
+  <div id="hud">
+    <div id="playerDisplay">Driver: Player</div>
+    <div id="speed">Speed: 0</div>
+    <div id="lap">Lap: 1 / 6</div>
+  </div>
+
+  <div id="topButtons">
+    <button id="cameraBtn" class="small">Normal</button>
+    <button id="gameSettingsBtn" class="small">Settings</button>
+    <button id="roomBtn" class="small">Room code</button>
+  </div>
+
+
+  <div id="loadingPanel" class="panel">
+    <h1>LOW-POLY RACING</h1>
+    <p>Preparing your circuit...</p>
+    <p id="loadPercent">0%</p>
+  </div>
+
+  <div id="menuPanel" class="panel" style="display:none">
+    <h1>LOW-POLY RACING</h1>
+    <p>A simple racing experience.</p>
+    <p id="welcomeName">Welcome, Player</p>
+    <button id="startBtn">START RACE</button>
+    <button id="menuSettingsBtn">SETTINGS</button>
+    <div id="musicCredit">Lobby music • Created by AI</div>
+  </div>
+
+  <div id="settingsPanel" class="panel">
+    <h1>SETTINGS</h1>
+
+    <div class="setting">
+      <label for="playerName">Driver name</label>
+      <input id="playerName" type="text" maxlength="18" placeholder="Enter your name">
+    </div>
+
+    <div class="setting">
+      <label for="carName">Car name</label>
+      <input id="carName" type="text" maxlength="18" placeholder="My car">
+    </div>
+
+
+    <div class="setting">
+      <label for="musicVolume">Music volume</label>
+      <input id="musicVolume" type="range" min="0" max="100" value="35">
+    </div>
+
+    <div class="setting">
+      <label for="sfxVolume">SFX volume</label>
+      <input id="sfxVolume" type="range" min="0" max="100" value="45">
+    </div>
+
+    <button id="backBtn">BACK</button>
+    <p>Settings update automatically.</p>
+  </div>
+
+  <div id="roomPanel" class="panel" style="display:none">
+    <h1>ONLINE ROOM</h1>
+    <p>Create a room or enter a four-character code to join.</p>
+    <div class="setting">
+      <label for="roomCodeInput">Room code</label>
+      <input id="roomCodeInput" type="text" maxlength="4" placeholder="ABCD" autocomplete="off" style="text-transform:uppercase">
+    </div>
+    <div style="display:flex;gap:7px;flex-wrap:wrap;justify-content:center">
+      <button id="createRoomBtn">CREATE ROOM</button>
+      <button id="joinRoomBtn">JOIN ROOM</button>
+    </div>
+    <p id="roomMessage">Connect to Supabase to enable online rooms.</p>
+    <button id="roomBackBtn">BACK TO RACE</button>
+  </div>
+
+  <div id="finishPanel" class="panel" style="display:none">
+    <h1>RACE FINISHED!</h1>
+    <p id="finishMessage">Great driving!</p>
+    <button id="restartBtn">RACE AGAIN</button>
+    <button id="finishHomeBtn">MAIN MENU</button>
+  </div>
+</div>
+
+<p style="font-size:11px;opacity:.7">WASD or arrow keys to drive</p>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+const game=document.getElementById("game");
+const menuPanel=document.getElementById("menuPanel");
+const settingsPanel=document.getElementById("settingsPanel");
+const roomPanel=document.getElementById("roomPanel");
+const finishPanel=document.getElementById("finishPanel");
+const loadingPanel=document.getElementById("loadingPanel");
+const hud=document.getElementById("hud");
+const topButtons=document.getElementById("topButtons");
+
+let scene,camera,renderer,car,initialsMesh,nameTag;
+let running=false;
+let speed=0,heading=Math.PI;
+let carX=34,carZ=0;
+let lap=1,previousTrackAngle=0;
+let cameraMode=0;
+let musicVolume=.35,sfxVolume=.45;
+let audio,musicTimer;
+let playerName="Player",carName="My car";
+const keys={};
+
+const RX=34,RZ=22;
+const ROAD_WIDTH=18;
+
+// Supabase connection. The publishable key is intended for browser use.
+// Never put a Supabase secret key in this file.
+const SUPABASE_URL="https://zcjfgofltmtdhiqddwyu.supabase.co";
+const SUPABASE_PUBLISHABLE_KEY="sb_publishable_tDSY-EMMyNLQrtySqreT3w_BQCbuz6z";
+const supabaseClient=(window.supabase && window.supabase.createClient)
+  ? window.supabase.createClient(SUPABASE_URL,SUPABASE_PUBLISHABLE_KEY)
+  : null;
+function supabaseReady(){return !!supabaseClient;}
+
+function material(color,roughness=1){
+  return new THREE.MeshStandardMaterial({color,roughness});
+}
+
+function addTree(x,z,size){
+  const tree=new THREE.Group();
+
+  const trunk=new THREE.Mesh(
+    new THREE.CylinderGeometry(.2*size,.34*size,3*size,8),
+    material(0x684328)
+  );
+  trunk.position.y=1.5*size;
+  trunk.castShadow=true;
+  tree.add(trunk);
+
+  for(let i=0;i<5;i++){
+    const leaves=new THREE.Mesh(
+      new THREE.ConeGeometry((1.5-i*.14)*size,2.3*size,8),
+      material(i%2?0x28633a:0x347b42)
+    );
+    leaves.position.y=(2.8+i*.8)*size;
+    leaves.castShadow=true;
+    tree.add(leaves);
+  }
+
+  tree.position.set(x,0,z);
+  scene.add(tree);
+}
+
+function addRoad(){
+  const vertices=[];
+  const indices=[];
+  const edgeVertices=[];
+  const segments=220;
+
+  for(let i=0;i<=segments;i++){
+    const a=i/segments*Math.PI*2;
+    const cx=RX*Math.cos(a);
+    const cz=RZ*Math.sin(a);
+    const tx=-RX*Math.sin(a);
+    const tz=RZ*Math.cos(a);
+    const length=Math.hypot(tx,tz);
+    const nx=tz/length;
+    const nz=-tx/length;
+    const half=ROAD_WIDTH/2;
+
+    vertices.push(
+      cx+nx*half,.12,cz+nz*half,
+      cx-nx*half,.12,cz-nz*half
+    );
+
+    edgeVertices.push(
+      cx+nx*(half+.4),.15,cz+nz*(half+.4),
+      cx-nx*(half+.4),.15,cz-nz*(half+.4)
+    );
+
+    if(i<segments){
+      const p=i*2;
+      indices.push(p,p+1,p+2,p+1,p+3,p+2);
+    }
+  }
+
+  const geometry=new THREE.BufferGeometry();
+  geometry.setAttribute("position",new THREE.Float32BufferAttribute(vertices,3));
+  geometry.setIndex(indices);
+  geometry.computeVertexNormals();
+
+  const road=new THREE.Mesh(
+    geometry,
+    new THREE.MeshStandardMaterial({
+      color:0x303438,
+      side:THREE.DoubleSide,
+      roughness:1
+    })
+  );
+  road.receiveShadow=true;
+  scene.add(road);
+
+  const edgeGeo=new THREE.BufferGeometry();
+  edgeGeo.setAttribute("position",new THREE.Float32BufferAttribute(edgeVertices,3));
+  scene.add(new THREE.LineSegments(edgeGeo,material(0xf0eee5)));
+
+  // Red and white kerbs
+  for(let i=0;i<segments;i+=2){
+    const a=i/segments*Math.PI*2;
+    const cx=RX*Math.cos(a),cz=RZ*Math.sin(a);
+    const tx=-RX*Math.sin(a),tz=RZ*Math.cos(a);
+    const len=Math.hypot(tx,tz);
+    const nx=tz/len,nz=-tx/len;
+
+    for(const side of [-1,1]){
+      const kerb=new THREE.Mesh(
+        new THREE.BoxGeometry(.8,.15,.7),
+        material((i/2)%2===0?0xd83d36:0xf0eee5)
+      );
+      kerb.position.set(
+        cx+nx*side*(ROAD_WIDTH/2+.3),
+        .2,
+        cz+nz*side*(ROAD_WIDTH/2+.3)
+      );
+      kerb.rotation.y=-a;
+      kerb.castShadow=true;
+      scene.add(kerb);
+    }
+  }
+
+  // Roadside grass strips
+  for(let i=0;i<segments;i+=3){
+    const a=i/segments*Math.PI*2;
+    for(const side of [-1,1]){
+      const grass=new THREE.Mesh(
+        new THREE.BoxGeometry(2,.06,1.2),
+        material(0x789b49)
+      );
+      grass.position.set(
+        (RX+side*11)*Math.cos(a),
+        .02,
+        (RZ+side*11)*Math.sin(a)
+      );
+      grass.rotation.y=-a;
+      scene.add(grass);
+    }
+  }
+}
+
+function addCarInitials(){
+  if(initialsMesh){
+    car.remove(initialsMesh);
+    initialsMesh.material.map.dispose();
+    initialsMesh.material.dispose();
+  }
+
+  const canvas=document.createElement("canvas");
+  canvas.width=512;
+  canvas.height=192;
+  const ctx=canvas.getContext("2d");
+
+  ctx.clearRect(0,0,512,192);
+  ctx.fillStyle="white";
+  ctx.font="bold 116px Arial";
+  ctx.textAlign="center";
+  ctx.textBaseline="middle";
+
+  const initials=(playerName||"PLY").trim().slice(0,3).toUpperCase()||"PLY";
+  ctx.fillText(initials,256,96);
+
+  const texture=new THREE.CanvasTexture(canvas);
+  initialsMesh=new THREE.Mesh(
+    new THREE.PlaneGeometry(1.5,.56),
+    new THREE.MeshBasicMaterial({
+      map:texture,
+      transparent:true,
+      side:THREE.DoubleSide,
+      depthWrite:false
+    })
+  );
+
+  // Mounted on the rear of the car
+  initialsMesh.position.set(0,1.15,1.79);
+  car.add(initialsMesh);
+}
+
+
+function makeNameTag(label){
+  const canvas=document.createElement("canvas");
+  canvas.width=512; canvas.height=128;
+  const ctx=canvas.getContext("2d");
+  ctx.clearRect(0,0,512,128);
+  ctx.fillStyle="rgba(5,12,18,.72)";
+  ctx.beginPath();
+  if(ctx.roundRect)ctx.roundRect(12,12,488,104,22);
+  else ctx.rect(12,12,488,104);
+  ctx.fill();
+  ctx.font="bold 48px Arial";
+  ctx.textAlign="center";
+  ctx.textBaseline="middle";
+  ctx.lineWidth=5;
+  ctx.strokeStyle="#15212a";
+  ctx.strokeText(label||"Player",256,64);
+  ctx.fillStyle="#ffffff";
+  ctx.fillText(label||"Player",256,64);
+  const texture=new THREE.CanvasTexture(canvas);
+  const sprite=new THREE.Sprite(new THREE.SpriteMaterial({map:texture,transparent:true,depthTest:false}));
+  sprite.scale.set(5.2,1.3,1);
+  sprite.userData.name=label||"Player";
+  return sprite;
+}
+function updateNameTag(){
+  if(!car)return;
+  if(nameTag){
+    car.remove(nameTag);
+    if(nameTag.material.map)nameTag.material.map.dispose();
+    nameTag.material.dispose();
+  }
+  nameTag=makeNameTag(playerName);
+  nameTag.position.set(0,3.05,0);
+  car.add(nameTag);
+}
+
+function buildWorld(){
+  scene=new THREE.Scene();
+  scene.background=new THREE.Color(0x91c9df);
+  scene.fog=new THREE.Fog(0x91c9df,115,220);
+
+  camera=new THREE.PerspectiveCamera(58,1,.1,350);
+
+  renderer=new THREE.WebGLRenderer({antialias:true});
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio,1.5));
+  renderer.shadowMap.enabled=true;
+  renderer.shadowMap.type=THREE.PCFSoftShadowMap;
+  renderer.outputEncoding=THREE.sRGBEncoding;
+  renderer.toneMapping=THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure=1.12;
+  game.prepend(renderer.domElement);
+
+  scene.add(new THREE.HemisphereLight(0xdff4ff,0x526b43,1.9));
+
+  const sun=new THREE.DirectionalLight(0xffffff,2.2);
+  sun.position.set(-35,65,30);
+  sun.castShadow=true;
+  sun.shadow.mapSize.set(2048,2048);
+  sun.shadow.camera.left=-90;
+  sun.shadow.camera.right=90;
+  sun.shadow.camera.top=90;
+  sun.shadow.camera.bottom=-90;
+  scene.add(sun);
+
+  const ground=new THREE.Mesh(
+    new THREE.PlaneGeometry(260,260),
+    material(0x609b52)
+  );
+  ground.rotation.x=-Math.PI/2;
+  ground.position.y=-.12;
+  ground.receiveShadow=true;
+  scene.add(ground);
+
+  const sunDisc=new THREE.Mesh(
+    new THREE.SphereGeometry(5,20,16),
+    new THREE.MeshBasicMaterial({color:0xffe8ae})
+  );
+  sunDisc.position.set(-75,65,-115);
+  scene.add(sunDisc);
+
+  addRoad();
+
+  // Distant scenery
+  for(let i=0;i<90;i++){
+    const a=Math.random()*Math.PI*2;
+    const d=52+Math.random()*24;
+    addTree(Math.cos(a)*d,Math.sin(a)*d*.67,.9+Math.random()*1.1);
+  }
+
+  for(let i=0;i<35;i++){
+    const a=Math.random()*Math.PI*2;
+    const d=45+Math.random()*26;
+    const rock=new THREE.Mesh(
+      new THREE.DodecahedronGeometry(.5+Math.random()*.8,0),
+      material(0x777a78)
+    );
+    rock.position.set(Math.cos(a)*d,.35,Math.sin(a)*d*.67);
+    rock.castShadow=true;
+    scene.add(rock);
+  }
+
+  // Car
+  car=new THREE.Group();
+
+  const body=new THREE.Mesh(
+    new THREE.BoxGeometry(2.1,.65,3.5),
+    material(0xc93630)
+  );
+  body.position.y=.75;
+  body.castShadow=true;
+  car.add(body);
+
+  const cabin=new THREE.Mesh(
+    new THREE.BoxGeometry(1.55,.75,1.65),
+    material(0x303d4b)
+  );
+  cabin.position.set(0,1.35,-.15);
+  cabin.castShadow=true;
+  car.add(cabin);
+
+  const roof=new THREE.Mesh(
+    new THREE.BoxGeometry(1.35,.12,1.35),
+    material(0xd9d9d9)
+  );
+  roof.position.set(0,1.76,-.15);
+  car.add(roof);
+
+  for(const x of [-1.05,1.05]){
+    for(const z of [-1.05,1.05]){
+      const wheel=new THREE.Mesh(
+        new THREE.CylinderGeometry(.42,.42,.28,12),
+        material(0x171717)
+      );
+      wheel.rotation.z=Math.PI/2;
+      wheel.position.set(x,.48,z);
+      car.add(wheel);
+    }
+  }
+
+  for(const x of [-.68,.68]){
+    const lamp=new THREE.Mesh(
+      new THREE.BoxGeometry(.34,.18,.08),
+      new THREE.MeshStandardMaterial({color:0xfff0bd,emissive:0xffd36a,emissiveIntensity:.45})
+    );
+    lamp.position.set(x,.82,-1.77);
+    car.add(lamp);
+  }
+  const bumper=new THREE.Mesh(new THREE.BoxGeometry(2.05,.18,.18),material(0x252a2d));
+  bumper.position.set(0,.48,-1.78);
+  car.add(bumper);
+
+  scene.add(car);
+  addCarInitials();
+  nameTag=makeNameTag(playerName);
+  nameTag.position.set(0,3.05,0);
+  car.add(nameTag);
+  resize();
+}
+
+function resize(){
+  if(!renderer)return;
+  const w=game.clientWidth,h=game.clientHeight;
+  renderer.setSize(w,h,false);
+  camera.aspect=w/h;
+  camera.updateProjectionMatrix();
+}
+
+function roadDistance(){
+  const t=Math.atan2(carZ/RZ,carX/RX);
+  const cx=RX*Math.cos(t);
+  const cz=RZ*Math.sin(t);
+  return Math.hypot(carX-cx,carZ-cz);
+}
+
+function updateCar(){
+  car.position.set(carX,0,carZ);
+  car.rotation.y=heading;
+}
+
+function updateCamera(){
+  const forwardX=-Math.sin(heading);
+  const forwardZ=-Math.cos(heading);
+
+  if(cameraMode===0){
+    camera.position.set(carX-forwardX*15,8,carZ-forwardZ*15);
+    camera.lookAt(carX,1,carZ);
+  }else if(cameraMode===1){
+    camera.position.set(carX+forwardX*11,4,carZ+forwardZ*11);
+    camera.lookAt(carX,1,carZ);
+  }else if(cameraMode===2){
+    camera.position.set(carX-forwardX*7,4.5,carZ-forwardZ*7);
+    camera.lookAt(carX,1,carZ);
+  }else{
+    camera.position.set(31,23,29);
+    camera.lookAt(0,0,0);
+  }
+}
+
+function updateDriving(){
+  const accelerating=keys.w||keys.ArrowUp;
+  const braking=keys.s||keys.ArrowDown;
+  const left=keys.a||keys.ArrowLeft;
+  const right=keys.d||keys.ArrowRight;
+
+  if(accelerating)speed=Math.min(speed+.0065,.82);
+  else speed*=.992;
+
+  if(braking){
+    if(speed>.02)speed=Math.max(0,speed-.025);
+    else speed=Math.max(speed-.009,-.3);
+  }
+
+  const steering=(right?1:0)-(left?1:0);
+
+  if(Math.abs(speed)>.015){
+    heading-=steering*.035*(speed>=0?1:-1)*Math.min(1,Math.abs(speed)*2.5);
+  }
+
+  carX+=-Math.sin(heading)*speed;
+  carZ+=-Math.cos(heading)*speed;
+
+  if(roadDistance()>ROAD_WIDTH/2){
+    speed*=.94;
+  }
+
+  const current=(Math.atan2(carZ/RZ,carX/RX)+Math.PI*2)%(Math.PI*2);
+
+  if(previousTrackAngle>5.8&&current<.4&&speed>.08){
+    lap++;
+    if(lap>6){
+      running=false;
+      hud.style.display="none";
+      topButtons.style.display="none";
+      document.getElementById("finishMessage").textContent=playerName+" completed the race!";
+      finishPanel.style.display="flex";
+      stopMusic();
+    }
+  }
+  previousTrackAngle=current;
+
+  updateCar();
+  updateCamera();
+
+  document.getElementById("speed").textContent="Speed: "+Math.round(Math.abs(speed)*180);
+  document.getElementById("lap").textContent="Lap: "+Math.min(lap,6)+" / 6";
+}
+
+function animate(){
+  requestAnimationFrame(animate);
+  if(running){updateDriving();syncOnlinePlayer();}
+  renderer.render(scene,camera);
+}
+
+// Original generated background music
+function setupAudio(){
+  if(!audio)audio=new(window.AudioContext||window.webkitAudioContext)();
+  if(audio.state==="suspended")audio.resume();
+}
+
+function playSfx(freq=500){
+  if(!audio||sfxVolume<=0)return;
+  const osc=audio.createOscillator();
+  const gain=audio.createGain();
+  osc.type="sine";
+  osc.frequency.value=freq;
+  gain.gain.setValueAtTime(sfxVolume*.12,audio.currentTime);
+  gain.gain.exponentialRampToValueAtTime(.001,audio.currentTime+.12);
+  osc.connect(gain);
+  gain.connect(audio.destination);
+  osc.start();
+  osc.stop(audio.currentTime+.13);
+}
+
+function musicBeat(){
+  if(!audio||musicVolume<=0)return;
+  const now=audio.currentTime;
+  const chords=[
+    [261.63,329.63,392],
+    [220,261.63,329.63],
+    [174.61,220,261.63],
+    [196,246.94,293.66]
+  ];
+  const chord=chords[Math.floor(Date.now()/4000)%4];
+
+  chord.forEach(freq=>{
+    const osc=audio.createOscillator();
+    const gain=audio.createGain();
+    osc.type="triangle";
+    osc.frequency.value=freq;
+    gain.gain.setValueAtTime(0,now);
+    gain.gain.linearRampToValueAtTime(musicVolume*.035,now+.08);
+    gain.gain.linearRampToValueAtTime(0,now+1.7);
+    osc.connect(gain);
+    gain.connect(audio.destination);
+    osc.start(now);
+    osc.stop(now+1.8);
+  });
+
+  const bass=audio.createOscillator();
+  const bg=audio.createGain();
+  bass.type="sine";
+  bass.frequency.value=chord[0]/2;
+  bg.gain.setValueAtTime(musicVolume*.11,now);
+  bg.gain.exponentialRampToValueAtTime(.001,now+.35);
+  bass.connect(bg);
+  bg.connect(audio.destination);
+  bass.start(now);
+  bass.stop(now+.36);
+}
+
+function startMusic(){
+  if(!audio)return;
+  if(musicTimer)clearInterval(musicTimer);
+  if(musicVolume>0)musicBeat();
+  musicTimer=setInterval(musicBeat,1800);
+}
+function stopMusic(){
+  if(musicTimer)clearInterval(musicTimer);
+  musicTimer=null;
+}
+
+// Profile
+function loadProfile(){
+  try{
+    const saved=JSON.parse(localStorage.getItem("lowPolyProfile")||"{}");
+    playerName=saved.playerName||"Player";
+    carName=saved.carName||"My car";
+    musicVolume=saved.musicVolume??.35;
+    sfxVolume=saved.sfxVolume??.45;
+    cameraMode=saved.cameraMode??0;
+  }catch(e){}
+  document.getElementById("playerName").value=playerName;
+  document.getElementById("carName").value=carName;
+  document.getElementById("musicVolume").value=musicVolume*100;
+  document.getElementById("sfxVolume").value=sfxVolume*100;
+  updateWelcome();
+  updateCameraLabel();
+  updateNameTag();
+}
+
+function updateWelcome(){
+  document.getElementById("welcomeName").textContent="Welcome, "+playerName;
+  document.getElementById("playerDisplay").textContent="Driver: "+playerName;
+}
+
+function updateCameraLabel(){
+  document.getElementById("cameraBtn").textContent=
+    ["Normal","Behind","Close Up","Fixed"][cameraMode];
+}
+
+function applyLiveSettings(){
+  playerName=document.getElementById("playerName").value.trim()||"Player";
+  carName=document.getElementById("carName").value.trim()||"My car";
+  musicVolume=Number(document.getElementById("musicVolume").value)/100;
+  sfxVolume=Number(document.getElementById("sfxVolume").value)/100;
+
+  updateWelcome();
+  updateCameraLabel();
+  addCarInitials();
+  updateNameTag();
+  updateCamera();
+
+  try{
+    localStorage.setItem("lowPolyProfile",JSON.stringify({playerName,carName,musicVolume,sfxVolume,cameraMode}));
+  }catch(e){}
+  if(audio&&running)startMusic();
+}
+
+
+// Race controls
+function startRace(){
+  finishPanel.style.display="none";
+  roomPanel.style.display="none";
+  setupAudio();
+  playSfx();
+  carX=RX;
+  carZ=0;
+  heading=Math.PI;
+  speed=0;
+  lap=1;
+  previousTrackAngle=0;
+  running=true;
+
+  menuPanel.style.display="none";
+  settingsPanel.style.display="none";
+  hud.style.display="block";
+  topButtons.style.display="flex";
+  roomPanel.style.display="none";
+  finishPanel.style.display="none";
+
+  updateCar();
+  updateCamera();
+  startMusic();
+}
+
+function openSettings(fromPause){
+  setupAudio();
+  settingsPanel.dataset.fromPause="no";
+  menuPanel.style.display="none";
+  settingsPanel.style.display="flex";
+}
+
+function closeSettings(){
+  settingsPanel.style.display="none";
+  if(running){
+    hud.style.display="block";
+    topButtons.style.display="flex";
+  }else{
+    menuPanel.style.display="flex";
+  }
+}
+
+
+function goHome(){
+  running=false;
+  leaveOnlineRoom();
+  settingsPanel.style.display="none";
+  hud.style.display="none";
+  topButtons.style.display="none";
+  roomPanel.style.display="none";
+  finishPanel.style.display="none";
+  menuPanel.style.display="flex";
+  stopMusic();
+  speed=0;
+  carX=RX;
+  carZ=0;
+  heading=Math.PI;
+  lap=1;
+  previousTrackAngle=0;
+}
+
+// Keyboard
+window.addEventListener("keydown",e=>{
+  if(["ArrowUp","ArrowDown","ArrowLeft","ArrowRight"," "].includes(e.key))e.preventDefault();
+  keys[e.key.length===1?e.key.toLowerCase():e.key]=true;
+});
+window.addEventListener("keyup",e=>{
+  keys[e.key.length===1?e.key.toLowerCase():e.key]=false;
+});
+
+
+
+// --- Supabase online rooms and remote drivers ---
+let roomChannel=null, playerId="", roomCode="", roomHost=false;
+let lastNetworkUpdate=0;
+const remotePlayers={};
+
+function makeRoomCode(){
+  const chars="ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  let code="";
+  for(let i=0;i<4;i++)code+=chars[Math.floor(Math.random()*chars.length)];
+  return code;
+}
+function roomMessage(message){
+  document.getElementById("roomMessage").textContent=message;
+}
+function addRemotePlayer(id,data){
+  if(remotePlayers[id])return remotePlayers[id];
+  const group=new THREE.Group();
+  const body=new THREE.Mesh(new THREE.BoxGeometry(2.1,.65,3.5),material(0x287ac2));
+  body.position.y=.75; body.castShadow=true; group.add(body);
+  const cabin=new THREE.Mesh(new THREE.BoxGeometry(1.55,.75,1.65),material(0x263747));
+  cabin.position.set(0,1.35,-.15); group.add(cabin);
+  const tag=makeNameTag(data.name||"Player");
+  tag.position.set(0,3.05,0); group.add(tag);
+  scene.add(group); remotePlayers[id]=group;
+  return group;
+}
+function removeRemotePlayer(id){
+  const obj=remotePlayers[id];
+  if(!obj)return;
+  scene.remove(obj);
+  obj.traverse(o=>{
+    if(o.material){if(o.material.map)o.material.map.dispose();o.material.dispose();}
+  });
+  delete remotePlayers[id];
+}
+function updateRemotePlayer(id,data){
+  if(!data||id===playerId)return;
+  const obj=addRemotePlayer(id,data);
+  obj.position.set(Number(data.x)||0,0,Number(data.z)||0);
+  obj.rotation.y=Number(data.heading)||0;
+  const tag=obj.children[2];
+  const label=data.name||"Player";
+  if(tag && tag.userData.name!==label){
+    obj.remove(tag);
+    if(tag.material.map)tag.material.map.dispose();
+    tag.material.dispose();
+    const newTag=makeNameTag(label);
+    newTag.position.set(0,3.05,0); obj.add(newTag);
+  }
+}
+function syncPresencePlayers(){
+  if(!roomChannel)return;
+  const state=roomChannel.presenceState();
+  const seen=new Set();
+  Object.keys(state).forEach(id=>{
+    if(id===playerId)return;
+    const data=(state[id]||[])[0];
+    if(data){seen.add(id);updateRemotePlayer(id,data);}
+  });
+  Object.keys(remotePlayers).forEach(id=>{if(!seen.has(id))removeRemotePlayer(id);});
+}
+function clearRemotePlayers(){Object.keys(remotePlayers).forEach(removeRemotePlayer);}
+function openRoomPanel(){
+  if(!running)roomMessage("Start a race first, then create or join a room.");
+  else if(!supabaseReady())roomMessage("Supabase could not load. Check your internet connection and reload the game.");
+  else roomMessage(roomCode?"Connected to "+roomCode+". Share the code with friends.":"Create a room or enter a friend's code.");
+  roomPanel.style.display="flex";
+}
+async function connectRoom(code,create){
+  if(!running){roomMessage("Start a race before joining a room.");return;}
+  if(!supabaseReady()){
+    roomMessage("Supabase did not load. Check your internet connection and reload the game.");
+    return;
+  }
+  if(roomChannel)await leaveOnlineRoom();
+  roomMessage("Connecting to room "+code+"...");
+  const thisPlayerId="p_"+Math.random().toString(36).slice(2,11);
+  const channel=supabaseClient.channel("race-room-"+code,{
+    config:{broadcast:{self:false},presence:{key:thisPlayerId}}
+  });
+  roomChannel=channel;
+  playerId=thisPlayerId;
+  roomCode=code;
+  roomHost=create;
+
+  channel.on("broadcast",{event:"player_update"},({payload})=>{
+    if(payload && payload.id)updateRemotePlayer(payload.id,payload);
+  });
+  channel.on("presence",{event:"sync"},syncPresencePlayers);
+  channel.on("presence",{event:"join"},syncPresencePlayers);
+  channel.on("presence",{event:"leave"},syncPresencePlayers);
+
+  channel.subscribe(async status=>{
+    if(status==="SUBSCRIBED"){
+      const state=channel.presenceState();
+      const existingIds=Object.keys(state);
+      const hostExists=existingIds.some(id=>(state[id]||[]).some(p=>p.isHost));
+      if(create && existingIds.length>0){
+        roomMessage("That room code is already in use. Creating another...");
+        await channel.unsubscribe();
+        if(roomChannel===channel){roomChannel=null;playerId="";roomCode="";roomHost=false;}
+        const nextCode=makeRoomCode();
+        document.getElementById("roomCodeInput").value=nextCode;
+        connectRoom(nextCode,true);
+        return;
+      }
+      if(!create && !hostExists){
+        roomMessage("Room not found. Check the code, or ask the host to create the room first.");
+        await channel.unsubscribe();
+        if(roomChannel===channel){roomChannel=null;playerId="";roomCode="";roomHost=false;}
+        clearRemotePlayers();
+        return;
+      }
+      const presenceData={name:playerName,x:carX,z:carZ,heading,isHost:create};
+      const tracked=await channel.track(presenceData);
+      if(tracked!="ok"){
+        roomMessage("Could not join the room. Please try again.");
+        await channel.unsubscribe();
+        if(roomChannel===channel){roomChannel=null;playerId="";roomCode="";roomHost=false;}
+        return;
+      }
+      document.getElementById("roomCodeInput").value=code;
+      roomMessage("Connected to "+code+"! Share this code with friends.");
+      syncPresencePlayers();
+      channel.send({type:"broadcast",event:"player_update",payload:{id:playerId,...presenceData}});
+    }else if(status==="CHANNEL_ERROR"||status==="TIMED_OUT"){
+      roomMessage("Connection failed. Check your Supabase Realtime settings and internet connection.");
+    }
+  });
+}
+function syncOnlinePlayer(){
+  if(!roomChannel||!playerId||!running)return;
+  const now=performance.now();
+  if(now-lastNetworkUpdate<120)return;
+  lastNetworkUpdate=now;
+  const data={id:playerId,name:playerName,x:carX,z:carZ,heading};
+  roomChannel.send({type:"broadcast",event:"player_update",payload:data});
+}
+async function leaveOnlineRoom(){
+  const oldChannel=roomChannel;
+  roomChannel=null;
+  playerId=""; roomCode=""; roomHost=false;
+  clearRemotePlayers();
+  if(oldChannel){
+    try{await oldChannel.untrack();}catch(e){}
+    try{await oldChannel.unsubscribe();}catch(e){}
+  }
+}
+
+// Buttons
+document.getElementById("startBtn").onclick=startRace;
+document.getElementById("menuSettingsBtn").onclick=()=>openSettings(false);
+document.getElementById("gameSettingsBtn").onclick=()=>openSettings(false);
+document.getElementById("roomBtn").onclick=openRoomPanel;
+document.getElementById("roomBackBtn").onclick=()=>{roomPanel.style.display="none";};
+document.getElementById("createRoomBtn").onclick=()=>{
+  const code=makeRoomCode();
+  document.getElementById("roomCodeInput").value=code;
+  connectRoom(code,true);
+};
+document.getElementById("joinRoomBtn").onclick=()=>{
+  const code=document.getElementById("roomCodeInput").value.trim().toUpperCase();
+  if(!/^[A-Z0-9]{4}$/.test(code)){roomMessage("Enter a valid four-character code.");return;}
+  connectRoom(code,false);
+};
+document.getElementById("restartBtn").onclick=startRace;
+document.getElementById("finishHomeBtn").onclick=goHome;
+document.getElementById("backBtn").onclick=closeSettings;
+
+document.getElementById("cameraBtn").onclick=()=>{
+  cameraMode=(cameraMode+1)%4;
+  try{localStorage.setItem("lowPolyProfile",JSON.stringify({playerName,carName,musicVolume,sfxVolume,cameraMode}));}catch(e){}
+  updateCameraLabel();
+  updateCamera();
+  playSfx();
+};
+
+// Instant settings
+["playerName","carName","musicVolume","sfxVolume"].forEach(id=>{
+  document.getElementById(id).addEventListener("input",applyLiveSettings);
+  document.getElementById(id).addEventListener("change",applyLiveSettings);
+});
+
+buildWorld();
+loadProfile();
+updateNameTag();
+updateCar();
+updateCamera();
+animate();
+
+let progress=0;
+const loader=setInterval(()=>{
+  progress=Math.min(100,progress+10);
+  document.getElementById("loadPercent").textContent=progress+"%";
+  if(progress>=100){
+    clearInterval(loader);
+    loadingPanel.style.display="none";
+    menuPanel.style.display="flex";
+  }
+},90);
+
+window.addEventListener("resize",resize);
+</script>
+</body>
+</html>
